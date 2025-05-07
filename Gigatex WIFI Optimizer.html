@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Wi-Fi Floor Plan Mockup</title>
+  <style>
+    :root {
+      --bg-color: #ffffff;
+      --text-color: #000000;
+      --box-color: #f9f9f9;
+      --border-color: #ccc;
+    }
+    body.dark {
+      --bg-color: #121212;
+      --text-color: #ffffff;
+      --box-color: #1e1e1e;
+      --border-color: #444;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      transition: background 0.3s, color 0.3s;
+    }
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    #logo {
+      max-width: 200px;
+      margin-bottom: 10px;
+    }
+    #coverage-display {
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    #controls-row {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 10px 0;
+    }
+    #main-container {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    #canvas-container {
+      position: relative;
+      border: 1px solid var(--border-color);
+    }
+    canvas {
+      display: block;
+    }
+    .ap {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: red;
+      border-radius: 50%;
+      cursor: move;
+      z-index: 10;
+    }
+    #ap-list {
+      width: 250px;
+      border: 1px solid var(--border-color);
+      padding: 10px;
+      background: var(--box-color);
+      border-radius: 5px;
+      text-align: left;
+    }
+    #ap-list h3 {
+      margin-top: 0;
+    }
+    #ap-list ul {
+      list-style: none;
+      padding: 0;
+    }
+    #ap-list li {
+      margin: 5px 0;
+    }
+    select, input, button {
+      background-color: var(--box-color);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+      padding: 5px 10px;
+      border-radius: 4px;
+    }
+    footer {
+      text-align: center;
+      margin-top: 30px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body class="dark">
+<main>
+  <img id="logo" src="true-logo.png" alt="True Logo" />
+
+  <div>
+    <label for="modeSwitch">Default Mode:</label>
+    <input type="checkbox" id="modeSwitch" checked />
+  </div>
+
+  <h2>Gigatex WIFI Optimizer Pro</h2>
+  <div id="coverage-display">Coverage: 0%</div>
+
+  <input type="file" id="floorplan-upload" accept="image/*" />
+
+  <div id="controls-row">
+    <label for="apType">Select Gigatex Model:</label>
+    <select id="apType">
+      <optgroup label="A-Series">
+        <option value="A623">A623</option>
+        <option value="A625M">A625M</option>
+        <option value="A626M">A626M</option>
+        <option value="A662">A662</option>
+        <option value="A6268">A6268</option>
+      </optgroup>
+      <optgroup label="T-Series">
+        <option value="T626Pro">T626Pro</option>
+        <option value="T626ProV2">T626ProV2</option>
+        <option value="T627Pro">T627Pro</option>
+      </optgroup>
+    </select>
+
+    <label for="bandSelect">Band:</label>
+    <select id="bandSelect">
+      <option value="combined">2.4GHz + 5GHz</option>
+      <option value="2.4">2.4GHz Only</option>
+      <option value="5">5GHz Only</option>
+    </select>
+
+    <label for="styleSelect">Visualization:</label>
+    <select id="styleSelect">
+      <option value="ring">Ring</option>
+      <option value="heatmap">Heatmap</option>
+    </select>
+
+    <button id="resetBtn">Reset APs</button>
+    <button id="clearAllBtn">Clear Everything</button>
+    <button id="exportBtn">Export as PNG</button>
+  </div>
+
+  <div id="main-container">
+    <div id="canvas-container">
+      <canvas id="floorplan-canvas"></canvas>
+    </div>
+    <div id="ap-list">
+      <h3>Gigatex Equipment List</h3>
+      <ul id="ap-list-items"></ul>
+    </div>
+  </div>
+
+  <footer>
+    ©True Corporation Public Company Limited. All rights reserved.<br>
+    Powered by Futureverse Project, Broadband Access Network Engineering Department
+  </footer>
+</main>
+
+<script>
+const canvas = document.getElementById("floorplan-canvas");
+const ctx = canvas.getContext("2d");
+const container = document.getElementById("canvas-container");
+
+const apList = document.getElementById("ap-list-items");
+const apTypeSelect = document.getElementById("apType");
+const bandSelect = document.getElementById("bandSelect");
+const styleSelect = document.getElementById("styleSelect");
+const modeSwitch = document.getElementById("modeSwitch");
+const coverageDisplay = document.getElementById("coverage-display");
+const fileInput = document.getElementById("floorplan-upload");
+
+const tempCanvas = document.createElement("canvas");
+const tempCtx = tempCanvas.getContext("2d");
+
+let aps = [];
+let floorImage = new Image();
+
+const apSettings = {
+  A: { ghz24: 100, ghz5: 50 },
+  T: { ghz24: 140, ghz5: 80 }
+};
+
+modeSwitch.addEventListener("change", () => {
+  document.body.classList.toggle("dark", modeSwitch.checked);
+});
+
+fileInput.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (event) {
+    const img = new Image();
+    img.onload = function () {
+      floorImage = img;
+      canvas.width = img.width;
+      canvas.height = img.height;
+      tempCanvas.width = img.width;
+      tempCanvas.height = img.height;
+      ctx.drawImage(floorImage, 0, 0);
+      requestAnimationFrame(drawCoverage);
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+function drawCoverage() {
+  if (!floorImage.src) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(floorImage, 0, 0);
+  tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+  const pulse = Math.sin(Date.now() / 500) * 5;
+  const band = bandSelect.value;
+  const style = styleSelect.value;
+
+  tempCtx.fillStyle = "black";
+
+  aps.forEach(ap => {
+    const model = ap.dataset.model;
+    const type = model.startsWith("T") ? "T" : "A";
+    const { ghz24, ghz5 } = apSettings[type];
+    const apX = parseInt(ap.style.left) + 10;
+    const apY = parseInt(ap.style.top) + 10;
+
+    if (band === "2.4" || band === "combined") {
+      tempCtx.beginPath();
+      tempCtx.arc(apX, apY, ghz24, 0, Math.PI * 2);
+      tempCtx.fill();
+    }
+    if (band === "5" || band === "combined") {
+      tempCtx.beginPath();
+      tempCtx.arc(apX, apY, ghz5, 0, Math.PI * 2);
+      tempCtx.fill();
+    }
+
+    const r24 = ghz24 + (style === "ring" ? pulse : 0);
+    const r5 = ghz5 + (style === "ring" ? pulse : 0);
+
+    if (band === "2.4" || band === "combined") {
+      ctx.beginPath();
+      style === "heatmap"
+        ? (ctx.fillStyle = "rgba(0,0,255,0.2)", ctx.arc(apX, apY, r24, 0, Math.PI * 2), ctx.fill())
+        : (ctx.strokeStyle = "rgba(0,0,255,0.4)", ctx.lineWidth = 4, ctx.arc(apX, apY, r24, 0, Math.PI * 2), ctx.stroke());
+      ctx.fillStyle = "blue";
+      ctx.fillText("2.4GHz", apX + r24 + 5, apY);
+    }
+
+    if (band === "5" || band === "combined") {
+      ctx.beginPath();
+      style === "heatmap"
+        ? (ctx.fillStyle = "rgba(255,0,0,0.2)", ctx.arc(apX, apY, r5, 0, Math.PI * 2), ctx.fill())
+        : (ctx.strokeStyle = "rgba(255,0,0,0.4)", ctx.lineWidth = 4, ctx.arc(apX, apY, r5, 0, Math.PI * 2), ctx.stroke());
+      ctx.fillStyle = "red";
+      ctx.fillText("5GHz", apX + r5 + 5, apY);
+    }
+  });
+
+  const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
+  let covered = 0;
+  for (let i = 0; i < imgData.length; i += 4) {
+    if (imgData[i + 3] !== 0) covered++;
+  }
+
+  const percent = ((covered / (canvas.width * canvas.height)) * 100).toFixed(1);
+  const label = {
+    "2.4": "2.4GHz",
+    "5": "5GHz",
+    "combined": "2.4GHz + 5GHz"
+  }[band];
+  coverageDisplay.textContent = `Coverage (${label}): ${percent}%`;
+
+  requestAnimationFrame(drawCoverage);
+}
+
+canvas.addEventListener("click", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const model = apTypeSelect.value;
+  const ap = document.createElement("div");
+  ap.className = "ap";
+  ap.style.left = `${x - 10}px`;
+  ap.style.top = `${y - 10}px`;
+  ap.dataset.model = model;
+  container.appendChild(ap);
+  aps.push(ap);
+  updateAPList();
+
+  ap.onmousedown = function (e) {
+    if (e.button === 2) return;
+    let shiftX = e.clientX - ap.getBoundingClientRect().left;
+    let shiftY = e.clientY - ap.getBoundingClientRect().top;
+    function moveAt(pageX, pageY) {
+      ap.style.left = pageX - container.offsetLeft - shiftX + 'px';
+      ap.style.top = pageY - container.offsetTop - shiftY + 'px';
+    }
+    function onMouseMove(e) { moveAt(e.pageX, e.pageY); }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", function onMouseUp() {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    });
+  };
+
+  ap.addEventListener("contextmenu", function (e) {
+    e.preventDefault();
+    container.removeChild(ap);
+    aps = aps.filter(a => a !== ap);
+    updateAPList();
+  });
+});
+
+function updateAPList() {
+  apList.innerHTML = "";
+  aps.forEach((ap, i) => {
+    const model = ap.dataset.model;
+    const li = document.createElement("li");
+    li.textContent = i === 0
+      ? `${i + 1} Gigatex (${model})`
+      : `${i + 1} Gigatex as a mesh (${model})`;
+    apList.appendChild(li);
+  });
+}
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  aps.forEach(ap => ap.remove());
+  aps = [];
+  updateAPList();
+  if (floorImage.src) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(floorImage, 0, 0);
+  }
+  coverageDisplay.textContent = "Coverage: 0%";
+});
+
+document.getElementById("clearAllBtn").addEventListener("click", () => {
+  aps.forEach(ap => ap.remove());
+  aps = [];
+  updateAPList();
+  floorImage = new Image();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = 1;
+  canvas.height = 1;
+  fileInput.value = "";
+  coverageDisplay.textContent = "Coverage: 0%";
+});
+
+document.getElementById("exportBtn").addEventListener("click", () => {
+  const link = document.createElement('a');
+  link.download = 'wifi-floorplan.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+</script>
+</body>
+</html>
